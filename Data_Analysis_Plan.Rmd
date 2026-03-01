@@ -7,17 +7,14 @@ date: "2026-02-28"
 ## Data Analysis Plan
 
 #### About the dataset: 
-
 The dataset is derived from raw data collected in Ethiopia in 2022 as part of a baseline survey designed to assess childhood immunization coverage and its associated factors among both host and refugee populations. The present dataset includes information on 3,200 children aged 12–23 months and their mothers or caretakers. It contains a total of 107 variables, of which 17 are numeric. 
 
-#### The goal of the analysis: 
-
+#### The goal of the analysis
 The goal of this analysis is to develop a model to classify children as under-immunized or non-immunized, and to identify the most influential features associated with immunization status of children. 
 
-#### The key questions tha analyis aim to answer: 
-
-1) Can we use the available data to predict the immunization status of children (fully immunized vs under-immunized/ non-immunized)? 2) What are the most influential features associated with immunization status of children? 
+#### The key questions tha analyis aim to answer
+1) Can we use the available data to predict the immunization status of children (fully immunized vs under-immunized/ non-immunized)? 
+2) What are the most influential features associated with immunization status of children? 
 
 #### Data Analysis
-
 Before the actual analysis, data cleaning and exploratory analysis will be conducted to understand the nature of the data and to prepare the data for the machine learning analysis. The analysis will start with descriptive statistics to summarize the data and appropriate machine learning concepts  will be applied to answer the research questions. The analysis will be conducted in R and documented in an R Markdown file. The analysis will be version controlled using GitHub and document the rationale behind each step.
