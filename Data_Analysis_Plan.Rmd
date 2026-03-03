@@ -17,5 +17,5 @@ The goal of this analysis is to develop a model to classify children as under-im
 2) What are the most influential features associated with immunization status of children? 
 
 #### Data Analysis
-Before the actual analysis, data cleaning and exploratory analysis will be conducted to understand the nature of the data and to prepare the data for the machine learning analysis. The analysis will start with descriptive statistics to summarize the data and appropriate machine learning concepts  will be applied to answer the research questions. The analysis will be conducted in R and documented in an R Markdown file. The analysis will be version controlled using GitHub and document the rationale behind each step.
+Before the actual analysis, data cleaning and exploratory analysis will be conducted to understand the nature of the data and to prepare the data for the machine learning analysis. The analysis will start with descriptive statistics to summarize the data and appropriate machine learning concepts  will be applied to answer the research questions. The analysis will be conducted in R and documented in an R Markdown file. The analysis will be version controlled using GitHub and document the rationale behind each step. 
 
