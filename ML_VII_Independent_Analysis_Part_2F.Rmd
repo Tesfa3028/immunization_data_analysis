@@ -1,0 +1,1047 @@
+---
+title: "ML_VII_Independent_Analysis_Part_2"
+output:
+  html_document: default
+  pdf_document: default
+date: "2026-02-20"
+---
+
+### Name: Tesfalem Tessema (ID: 11420026)
+
+```{r setup, message = FALSE, warning = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidymodels)
+library(sjPlot)
+library(finalfit)
+library(knitr)
+library(mice)
+library(naniar)
+library(gtsummary)
+library(mlbench)
+library(kernlab)
+library(vip)
+library(rsample)
+library(tune)
+library(recipes)
+library(yardstick)
+library(parsnip)
+library(glmnet)
+library(themis)
+library(microbenchmark)
+library(reportRmd)
+library(plotly)
+library(dplyr)
+library(psych)
+library(parallel)
+library(corrr)
+library(performance)
+library(utils)
+library(see)
+library(devtools)
+library(tidyclust)
+library(ClusterR)
+library(klaR)
+library(GGally)
+library(ggplot2)
+
+```
+
+
+### Introduction 
+
+This project is designed to conduct complete data analysis using machine learning techniques. Building on the first part of the assignment, a complete analysis including data wrangling, handling missing data, and the application of machine learning methods.
+
+### Objective
+
+The main objective of this analysis is to apply machine learning techniques to classify children as non-immunized (Zero dose) based on various socio-demographic, knowledge, perception, and health service–related factors. The most influential features associated with immunization status of children are also identified, where appropriate. 
+
+### Data Description
+
+For the analysis, a dataset derived from raw data collected in Ethiopia in 2022 is used. This data was collected as part of a baseline survey designed to assess childhood immunization coverage and its associated factors among selected host and refugee populations in one of the remote regions (Gambella Region) of Ethiopia. The survey was conducted following the World Health Organization's (WHO's) Vaccination Coverage Cluster Surveys Reference Manual. Accordingly, the data were collected in the sample of 3,200 children aged 12–23 months and their mothers or caretakers. It has a total of 84 variables (Subset of the dataset) that captured information on demographic characteristics, socioeconomic status, health‑care access, and knowledge, attitudes, and practices (KAP) related to childhood immunization are used for the present analysis. 
+This dataset was selected due to its close similarity to the key components of Demographic and Health Survey (DHS) data, which are widely used in analyses of immunization coverage. After applying machine learning methods on this dataset, I am planning to apply the same approach to the 2024/2025 Ethiopian DHS data, which is expected to become available in the coming months. 
+
+### Data Analysis
+
+***Part 1:*** This section presented the data cleaning and exploration steps, which are already submitted as part of the ** Independent Analysis Part 1 Assignment**. 
+
+***Part 2:*** This section present the application of three machine learning concepts (Logistic regression, Random forest, and Artificial Neural Network) to answer the research questions. The rationale and the detail of the procedures used for each of the machine learning methods are described in the respective sections below.
+
+## Part 1:Data Wrangling and preprocessing including handling missing data
+
+After the submission of the Independent Analysis Part 1 Assignment, I have noted that some of the variables in the dataset are closely related to the outcome variable (Penta 1/ zero-dose status). Including them as predictors may lead to data leakage. For instance, receiving related vaccines and data collected about vaccination card are directly related to the immunization status of the child. Therefore, I have removed these variables from the dataset before fitting the machine learning models to avoid overestimation of model performance and poor generalization to new data.
+
+```{r}
+# Loading the dataset
+
+data1 <-read_csv("ML_Immunization_BL_data_20_Feb_26_2.csv")
+
+```
+
+```{}
+# Examining dataset
+glimpse(data1)
+```
+
+
+```{r}
+# Checking for missing values
+missing_table <- miss_var_summary(data1)
+missing_table
+```
+
+We have 31 variables with missing values ranging from less than 1% to 88%. Although most of these missing values are due to the nature of the data where some questions were not applicable to all respondents, I have imputed the missing values for the purpose of this assignment using MICE.
+
+```{r}
+# Imputing missing values
+
+mice_all <- mice(data1, method = "cart", m = 1, maxit = 1) 
+mice_all$method
+
+mice_immunz_imp <- complete(mice_all)
+write_csv(mice_immunz_imp, "mice_immunz_imp.csv")
+```
+
+```{r}
+data <- read_csv("mice_immunz_imp.csv")
+rm(data1)
+```
+
+```{r}
+# Dependent variable
+
+## as factor
+data$Card_Penta1 <- as.factor(data$Card_Penta1)
+
+```
+
+```{r}
+# Summary statistics for the dependent variable
+data |> count(Card_Penta1, sort = TRUE)
+```
+
+According to the data collected from immunization card, only 9% of children received Penta 1, which is a proxy for receiving any dose of the recommended vaccines (non-zero dose), while 91% of children did not receive Penta 1, which is a proxy for not receiving any dose of the recommended vaccines (zero dose). The data has a significant class imbalance, which is considered in later steps of the analysis.
+
+```{r}
+# Summary statistics for numeric variables 
+
+rm_covsum(data=data,
+covs=c('Age_Child', 'Age_mother', 'Age_father', 'HH_size', 'Child_under_18', 'Child_under_5', 'HH_income', 'Time_to_imm_site', 'No_ANC', 'No_PNC', 'No_sessions_comp_imm', 'Age_comp_imm'))
+
+```
+
+ 
+As it can see from the above table, the data needs cleaning. For instance, the maximum age of the father is 514 years, the maximum HH size is 2000, the maximum time required to reach to the immunization site is 500 minutes, and the maximum number of sessions to complete immunization is 2000, etc, which are not meaningful values. Therefore, data cleaning is conducted to handle this. 
+
+```{r}
+# Data cleaning for numeric variables 
+data <- data %>%
+          mutate(Age_father = case_when(
+            Age_father > 76 ~ 76,
+            Age_father < 19 ~ 19,
+            TRUE ~ Age_father
+        ))
+
+data <- data %>%
+          mutate(HH_size = case_when(
+          HH_size > 15 ~ 15,
+          TRUE ~ HH_size
+          ))
+
+data <- data %>%
+          mutate(Child_under_18 = case_when(
+          Child_under_18 < 1 ~ 1,
+          Child_under_18 > 10 ~ 10,
+          TRUE ~ Child_under_18
+          ))
+
+data <- data %>%
+          mutate(Child_under_5 = case_when(
+          Child_under_5 < 1 ~ 1,
+          Child_under_5 > 5 ~ 5,
+          TRUE ~ Child_under_5
+          ))
+
+data <- data %>%
+          mutate(HH_income = case_when(
+            HH_income > 50000 ~ 50000,
+            HH_income < 500 ~ 500,
+            TRUE ~ HH_income
+        ))
+
+data <- data %>%
+          mutate(Time_to_imm_site = case_when(
+            Time_to_imm_site > 120 ~ 120,
+            Time_to_imm_site < 5 ~ 5,
+            TRUE ~ Time_to_imm_site
+        ))
+
+data <- data %>%
+          mutate(No_sessions_comp_imm = case_when(
+            No_sessions_comp_imm > 12 ~ 12,
+            No_sessions_comp_imm < 1 ~ 1,
+            TRUE ~ No_sessions_comp_imm
+        ))
+
+data <- data %>%
+          mutate(Age_comp_imm = case_when(
+            Age_comp_imm > 60 ~ 60,
+            Age_comp_imm < 1 ~ 1,
+            TRUE ~ Age_comp_imm
+        ))
+
+```
+
+
+```{r}
+## summary statistics after data cleaning 
+
+rm_covsum(data=data,
+covs=c('Age_Child', 'Age_mother', 'Age_father', 'HH_size', 'Child_under_18', 'Child_under_5', 'HH_income', 'Time_to_imm_site', 'No_ANC', 'No_PNC', 'No_sessions_comp_imm', 'Age_comp_imm'))
+
+```
+
+
+```{r}
+# Other variables
+## Child sex
+data |> count(Sex_Child, sort = TRUE)
+```
+
+```{r}
+# Recoding
+data <- data |>
+  mutate(Sex_Child = case_when(
+    Sex_Child == 1 ~ "Male",
+    Sex_Child == 2 ~ "Female"
+  ))
+data$Sex_Child <- as.factor(data$Sex_Child)
+data |> count(Sex_Child, sort = TRUE)
+```
+
+
+```{r}
+# Marital_status 
+data |> count(Marital_status, sort = TRUE)
+```
+
+
+```{r}
+# Recoding 
+data <- data %>%
+  mutate(Marital_status = case_when(
+    Marital_status == 1 ~ "Married",
+    Marital_status == 2 ~ "Not married",
+    Marital_status == 3 ~ "Living together",
+    Marital_status == 4 ~ "Separated",
+    Marital_status == 5 ~ "Divorced",
+    Marital_status == 6 ~ "Widowed"
+  ))
+data$Marital_status <- as.factor(data$Marital_status)
+data |> count(Marital_status, sort = TRUE)
+```
+
+
+```{r}
+# Literacy status of the mother
+data |> count(Mother_read_or_write, sort = TRUE)
+```
+
+
+```{r}
+# Recoding
+data <- data |>
+  mutate(Mother_read_or_write = case_when(
+    Mother_read_or_write == 1 ~ "Yes",
+    Mother_read_or_write == 0 ~ "No"
+  ))
+data$Mother_read_or_write <- as.factor(data$Mother_read_or_write)
+data |> count(Mother_read_or_write, sort = TRUE)
+```
+
+
+```{r}
+# Literacy status of the father
+data |> count(Father_read_or_write, sort = TRUE)
+```
+
+
+```{r}
+# Recoding
+data <- data |>
+  mutate(Father_read_or_write = case_when(
+    Father_read_or_write == 1 ~ "Yes",
+    Father_read_or_write == 0 ~ "No"
+  ))
+data$Father_read_or_write <- as.factor(data$Father_read_or_write)
+data |> count(Father_read_or_write, sort = TRUE)
+```
+
+
+```{r}
+# Residence
+data |> count(Residence, sort = TRUE)
+```
+
+
+```{r}
+# Recoding
+data <- data |>
+  mutate(Residence = case_when(
+    Residence == 1 ~ "Urban",
+    Residence == 2 ~ "Rural"
+  ))
+data$Residence <- as.factor(data$Residence)
+data |> count(Residence, sort = TRUE)
+```
+
+```{r}
+# ANC follow up during pregnancy
+data |> count(ANC_Px, sort = TRUE)
+```
+
+
+```{r}
+# Recoding
+data <- data |>
+  mutate(ANC_Px = case_when(
+    ANC_Px == 1 ~ "Yes",
+    ANC_Px == 0 ~ "No"
+  ))
+data$ANC_Px <- as.factor(data$ANC_Px)
+data |> count(ANC_Px, sort = TRUE)
+```
+
+```{r}
+# Place of child birth
+data |> count(Place_birth, sort = TRUE)
+```
+
+```{r}
+# Recoding
+data <- data |>
+  mutate(Place_birth = case_when(
+    Place_birth == 1 ~ "Health facility",
+    Place_birth == 2 ~ "Home"
+  ))
+data$Place_birth <- as.factor(data$Place_birth)
+data |> count(Place_birth, sort = TRUE)
+```
+
+
+```{r}
+# PNC follow up after delivery
+data |> count(PNC, sort = TRUE)
+```
+
+
+```{r}
+# Recoding
+data <- data |>
+  mutate(PNC = case_when(
+    PNC == 1 ~ "Yes",
+    PNC == 0 ~ "No"
+  ))
+data$PNC <- as.factor(data$PNC)
+data |> count(PNC, sort = TRUE)
+```
+
+```{r}
+# Receiving health education about immunization
+data |> count(HE_Imm, sort = TRUE)
+```
+
+```{r}
+# Recoding
+data <- data |>
+  mutate(HE_Imm = case_when(
+    HE_Imm == 1 ~ "Yes",
+    HE_Imm == 0 ~ "No"
+  ))
+data$HE_Imm <- as.factor(data$HE_Imm)
+data |> count(HE_Imm, sort = TRUE)
+```
+
+```{r}
+# When the child should start immunization
+data |> count(When_to_immun, sort = TRUE)
+```
+
+
+```{r}
+# Recoding
+data <- data |>
+  mutate(When_to_immun = case_when(
+    When_to_immun == 1 ~ "At birth",
+    When_to_immun == 2 ~ "After 45 days",
+    When_to_immun == 3 ~ "First two weeks",
+    When_to_immun == 4 ~ "After two weeks",
+    When_to_immun == 5 ~ "Don't know"
+  ))
+data $When_to_immun <- as.factor(data$When_to_immun)
+data |> count(When_to_immun, sort = TRUE)
+```
+
+```{r}
+# Comprehensive table with all the above variables
+
+rm_covsum(
+  data = data,
+  covs = c('Sex_Child', 'Marital_status', 'Mother_read_or_write', 'Father_read_or_write', 'Residence', 'ANC_Px', 'Place_birth', 'PNC', 'HE_Imm', 'When_to_immun'),
+  show.tests = TRUE
+)
+```
+
+
+Most of the below variables are factors with 1 representing Yes and 0 represents No. These variables are changed to factors and presented accordingly. 
+
+```{r}
+# Knowledge about vaccine preventable diseases
+
+## Converting to factor
+
+data <- data %>%
+  mutate(across(
+    c(Identify_Ds_Tb, Identify_Ds_polio, Identify_Ds_diptheria, 
+      Identify_Ds_purtusis, Identify_Ds_tetanus, Identify_Ds_measeles, 
+      Identify_Ds_pneumonia, Identify_Ds_Meng, Identify_Ds_HPB, 
+      Identify_Ds_diarreah),
+    ~ factor(.)
+  ))
+```
+
+```{r}
+## Table with all variables relevant to knowledge about vaccine preventable diseases
+
+rm_covsum(
+  data = data,
+  covs = c('Identify_Ds_Tb', 'Identify_Ds_polio', 'Identify_Ds_diptheria', 'Identify_Ds_purtusis', 'Identify_Ds_tetanus', 'Identify_Ds_measeles', 'Identify_Ds_pneumonia', 'Identify_Ds_Meng', 'Identify_Ds_HPB', 'Identify_Ds_diarreah'), 
+  show.tests = TRUE
+)
+```
+
+
+```{r}
+# Perceptions about immunization: Who should not be immunized_Sick children, Physically handicapped children
+
+## Converting to factor
+data <- data |>
+  mutate(across(
+    c(Some_children_should_not, Who_Newborns, Who_Sick, Who_Physically_handi_ca),
+    ~ factor(.)
+  ))
+```
+
+```{r}
+## Table for perceptions about immunization
+rm_covsum(
+  data = data,
+  covs = c('Some_children_should_not', 'Who_Newborns', 'Who_Sick', 'Who_Physically_handi_ca'), 
+  show.tests = TRUE
+)
+```
+
+```{r}
+# perceptions about immunization: Vaccines are harmful, Child fever after vaccination, Child diarrhea after vaccination, Doubt about vaccine, Worry about vaccine causing illness, Recommending others to vaccinate
+
+## Converting to factor
+data <- data |>
+  mutate(across(
+    c(Vacc_harmful, Child_fever_vacc, Child_diarrhea_Vacc, Doubt_vacc, Worry_Vacc_illness, Recommending_others),
+    ~ factor(.)
+  ))
+```
+
+```{r}
+## Table for perceptions about immunization: 
+rm_covsum(
+  data = data,
+  covs = c('Vacc_harmful', 'Child_fever_vacc', 'Child_diarrhea_Vacc', 'Doubt_vacc', 'Worry_Vacc_illness', 'Recommending_others'), 
+  show.tests = TRUE
+)
+```
+
+```{r}
+# Motivation to vaccinate
+
+## Converting to factor
+data <- data |>
+  mutate(across(
+    c(Motivation_prevents_dis, Motivation_prevents_death, Motivation_HW_told),
+    ~ factor(.)
+    ))
+```
+
+```{r}
+## Table for motivation to vaccinate
+rm_covsum(
+  data = data,
+  covs = c('Motivation_prevents_dis', 'Motivation_prevents_death', 'Motivation_HW_told'), 
+  show.tests = TRUE
+)
+```
+
+
+```{r}
+# The place to get vaccination
+## Converting to factor
+data <- data |>
+  mutate(across(
+    c(Where_outreach, Where_HP, Where_HC, Where_Hospital, Where_Private, Where_Faith_clinic),
+    ~ factor(.)
+  ))
+
+```
+
+```{r}
+## Table for the place to vaccinate the child
+rm_covsum(
+  data = data,
+  covs = c('Where_outreach', 'Where_HP', 'Where_HC', 'Where_Hospital', 'Where_Private', 'Where_Faith_clinic'), 
+  show.tests = TRUE
+)
+```
+
+
+```{r}
+# Information given during vaccination service
+## Converting to factor
+data <- data |>
+  mutate(across(
+    c(Told_adverse_events, Told_what_to_do, Told_next_visit),
+    ~ factor(.)
+  ))
+```
+
+```{r}
+## Table for information given during vaccination service
+rm_covsum(
+  data = data,
+  covs = c('Told_adverse_events', 'Told_what_to_do', 'Told_next_visit'), 
+  show.tests = TRUE
+)
+```
+
+
+```{r}
+# Experience in the vaccination service
+## Converting to factor
+data <- data |>
+  mutate(across(
+    c(Returned_without_vacc, Other_HF_visit, Received_vacc, Refused_vaccinations),
+    ~ factor(.)
+  ))
+```
+
+```{r}
+## Table for experience in the vaccination service
+rm_covsum(
+  data = data,
+  covs = c('Returned_without_vacc', 'Other_HF_visit', 'Received_vacc', 'Refused_vaccinations'),
+  show.tests = TRUE
+)
+```
+
+
+```{r}
+# Service satisfaction
+data |> count(Service_satisfaction, sort = TRUE)
+```
+
+```{r}
+# Recoding 1 and 2 into satisfied, 3 into neutral and 4 and 5 into dissatisfied
+data <- data |>
+  mutate(Service_satisfaction = case_when(
+    Service_satisfaction %in% c(1, 2) ~ 1,
+    Service_satisfaction == 3 ~ 2,
+    Service_satisfaction %in% c(4, 5) ~ 3
+  ))
+data$Service_satisfaction <- as.factor(data$Service_satisfaction)
+data |> count(Service_satisfaction, sort = TRUE)
+```
+
+```{r}
+# Labling 1 into satisfied, 2 into neutral and 3 into dissatisfied
+data <- data |>
+  mutate(Service_satisfaction = case_when(
+    Service_satisfaction == 1 ~ "Satisfied",
+    Service_satisfaction == 2 ~ "Neutral",
+    Service_satisfaction == 3 ~ "Dissatisfied"
+  ))
+data$Service_satisfaction <- as.factor(data$Service_satisfaction)
+data |> count(Service_satisfaction, sort = TRUE)
+```
+
+```{r}
+# Reason for satisfaction
+## Converting to factor
+data <- data |>
+  mutate(across(
+    c(Sat_friendly_staff, Sat_service_quality, Sat_short_waiting, Sat_service_available),
+    ~ factor(.)
+  ))
+```
+
+```{r}
+## Table for service satisfaction
+rm_covsum(
+  data = data,
+  covs = c('Sat_friendly_staff', 'Sat_service_quality', 'Sat_short_waiting', 'Sat_service_available'),
+  show.tests = TRUE
+)
+```
+
+
+```{r}
+# Reasons for dissatisfaction with the vaccination service
+## Converting to factor
+data <- data |>
+  mutate(across(
+    c(Dis_staff_not_friendly, Dis_dverse_effect, Dis_long_waiting, Dis_service_close, Dis_no_vaccine),
+    ~ factor(.)
+  ))
+```
+
+```{r}
+## Table for reasons for dissatisfaction with the vaccination service
+rm_covsum(
+  data = data,
+  covs = c('Dis_staff_not_friendly', 'Dis_dverse_effect', 'Dis_long_waiting', 'Dis_service_close', 'Dis_no_vaccine'),
+  show.tests = TRUE
+  )
+```
+
+
+```{r}
+# Reasons for not vaccinating the child
+
+## Converting to factor
+data <- data |>
+  mutate(across(
+    c(Reasons_no_no_HF, Reasons_no_dont_no_where, Reasons_no_not_important, Reasons_no_hurt_child, Reasons_no_rumor_danger, Reasons_no_religion_culture, Reasons_no_not_know_benefit), 
+    ~ factor(.)
+  ))
+```
+
+```{r}
+## Table for reasons for not vaccinating the child
+rm_covsum(
+  data = data,
+  covs = c('Reasons_no_no_HF', 'Reasons_no_dont_no_where', 'Reasons_no_not_important', 'Reasons_no_hurt_child', 'Reasons_no_rumor_danger', 'Reasons_no_religion_culture', 'Reasons_no_not_know_benefit'),
+  show.tests = TRUE
+)
+```
+
+```{r}
+# Reasons for under vaccinating the child
+
+## Converting to factor
+data <- data |>
+  mutate(across(
+    c(Reasons_under_far, Reasons_under_bad_schedule, Reasons_under_postponed, Reasons_under_no_staff, Reasons_under_closed, Reasons_under_dont_know_return),
+    ~ factor(.)
+  ))
+```
+
+```{r}
+## Table for reasons for under vaccinating the child
+rm_covsum(
+  data = data,
+  covs = c('Reasons_under_far', 'Reasons_under_bad_schedule', 'Reasons_under_postponed', 'Reasons_under_no_staff', 'Reasons_under_closed', 'Reasons_under_dont_know_return'),
+  show.tests = TRUE
+)
+```
+
+## Part 2: Machine Learning Analysis
+
+### Purpose
+
+To develop a model that predict the immunization status of children based on various socio-demographic, knowledge, perception, and service-related factors. This model can help identify children at risk of being not immunized at all (zero dose). In the dataset, 91%  of children did not receive Penta 1, which is a proxy for not receiving any dose of the recommended vaccines (zero dose).
+
+### Models
+
+Three models namely: Logistic regression, Random forest, and Artificial Neural Network were fitted to the data and compared based on their performance in classifying children as zero dose or not.
+
+### Preparation
+
+#### Data split 
+
+Given the imbalanced in the outcomes, stratified sampling is used to ensure that each fold of the cross-validation process had a similar proportion. The sample size in the dataset is small (3200). Therefore, I have used initial split, rather than initial validation split that needs large data
+to ensure reliable precision.
+
+```{r}
+set.seed(10)
+
+#### Cross Validation Split
+
+cv_split <- initial_split(data, prop = 0.70, strata = Card_Penta1)
+
+# Create data frames for the two sets:
+train_data <- training(cv_split)
+table(train_data$Card_Penta1)
+
+test_data  <- testing(cv_split)
+table(test_data$Card_Penta1)
+```
+
+#### V folds
+
+```{r}
+folds <- vfold_cv(training(cv_split), v = 5, strata = Card_Penta1)
+```
+
+
+#### Recipe 
+
+Although some preprocessing steps, such as normalization, are not strictly required for all models (eg- Random forest), a unified recipe was used to maintain consistency across the models. 
+
+```{r}
+Card_Penta1_recipe <- 
+  recipe(Card_Penta1 ~ ., data = train_data) %>%
+  step_rm(ID) %>%
+  step_smotenc(Card_Penta1, over_ratio = 0.9) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_zv(all_predictors(), -all_outcomes()) %>%
+  step_normalize(all_numeric_predictors())
+```
+
+
+### Model 1: Logistic Regression
+Penalized logistic regression with elastic net regularization was fitted using the glmnet engine, with the penalty and mixture hyperparameters tuned through cross-validation.
+
+
+```{r}
+logistic_model <- logistic_reg(
+    penalty = tune(),
+    mixture = tune()
+  ) %>% 
+  set_engine("glmnet") %>% 
+  set_mode("classification")
+```
+
+```{r}
+logistic_workflow <- workflow() %>% 
+          add_model(logistic_model) %>% 
+          add_recipe(Card_Penta1_recipe)
+
+logistic_workflow
+
+```
+
+```{r}
+logistic_tune <- 
+  tune_grid(
+    logistic_workflow,
+    resamples = folds,
+    metrics = metric_set(accuracy, roc_auc, brier_class),
+    control = control_grid(
+      save_pred = TRUE,
+      verbose = FALSE
+    )
+  )
+```
+
+
+
+```{r}
+collect_metrics(logistic_tune)
+
+show_best(logistic_tune, metric = "accuracy", n = 5)
+show_best(logistic_tune, metric = "roc_auc", n = 5)
+show_best(logistic_tune, metric = "brier_class", n = 5)
+
+```
+
+
+### Model 2: Random Forest
+
+
+```{r}
+cores <- parallel::detectCores()
+cores
+
+# tuning mtry and min_n, but fixing trees at 100.
+
+rf_model <- rand_forest(mtry = tune(), 
+                    min_n = tune(), 
+                    trees = 100) %>% 
+              set_engine("ranger", num.threads = cores) %>% 
+              set_mode("classification")
+```
+
+```{r}
+rf_workflow <- workflow() %>% 
+  add_model(rf_model) %>% 
+  add_recipe(Card_Penta1_recipe)
+
+rf_workflow
+```
+```{r}
+rf_tune <- 
+  tune_grid(
+    rf_workflow,
+    resamples = folds,
+    metrics = metric_set(accuracy, roc_auc, brier_class),
+    control = control_grid(
+      save_pred = TRUE,
+      verbose = FALSE
+    )
+  )
+```
+
+
+```{r}
+collect_metrics(rf_tune)
+
+show_best(rf_tune, metric = "accuracy", n = 5)
+show_best(rf_tune, metric = "roc_auc", n = 5)
+show_best(rf_tune, metric = "brier_class", n = 5)
+
+```
+
+
+### Model 3: Artifical Neural Netwrok 
+
+Given the size of the data, ANN with single layers .... 
+
+A single layer artificial neural network was implemented using the brulee engine, with hyperparameters including hidden units, learning rate, regularization penalty, number of epochs, and activation function tuned using stratified cross-validation.
+
+```{r}
+set.seed(123)
+
+mlp_model <- 
+  mlp(    epochs = tune(), 
+    hidden_units = tune(), 
+    penalty = tune(), 
+    learn_rate = tune(), 
+    activation = tune()
+  ) %>%
+  set_engine("brulee", validation = 0) %>% 
+  set_mode("classification")
+```
+
+```{r}
+mlp_workflow <- 
+  workflow() %>% 
+  add_model(mlp_model) %>% 
+  add_recipe(Card_Penta1_recipe)
+
+mlp_workflow
+```
+```{r}
+mlp_tune <- 
+  tune_grid(
+    mlp_workflow,
+    resamples = folds,
+    metrics = metric_set(accuracy, roc_auc, brier_class),
+    control = control_grid(
+      save_pred = TRUE,
+      verbose = FALSE
+    )
+  )
+```
+
+```{r}
+collect_metrics(mlp_tune)
+
+show_best(mlp_tune, metric = "accuracy", n = 5)
+show_best(mlp_tune, metric = "roc_auc", n = 5)
+show_best(mlp_tune, metric = "brier_class", n = 5)
+
+```
+
+
+## Final Model
+
+```{r}
+### Logistic Regression
+
+logistic_best <- 
+  select_best(logistic_tune, metric = "roc_auc")
+
+logistic_final_model <- 
+  finalize_model(
+    logistic_model,
+    logistic_best
+  )
+
+logistic_final_model
+
+final_logistic_workflow <- 
+  workflow() %>%
+  add_recipe(Card_Penta1_recipe) %>%
+  add_model(logistic_final_model)
+
+final_logistic_results <- 
+  final_logistic_workflow %>%
+  last_fit(cv_split)
+
+lr_results <- 
+  final_logistic_results %>%
+  collect_metrics()
+lr_results
+```
+
+```{r}
+### Random Forest
+
+rf_best <- 
+  select_best(rf_tune, metric = "roc_auc")
+
+rf_final_model <- 
+  finalize_model(
+    rf_model,
+    rf_best
+  )
+
+rf_final_model
+
+final_rf_workflow <- 
+  workflow() %>%
+  add_recipe(Card_Penta1_recipe) %>%
+  add_model(rf_final_model)
+
+final_rf_results <- 
+  last_fit(final_rf_workflow, cv_split)
+
+rf_results <- 
+  collect_metrics(final_rf_results)
+
+rf_results
+```
+
+```{r}
+### ANN
+
+mlp_best <- 
+  select_best(mlp_tune, metric = "roc_auc")
+
+mlp_final_model <- 
+  finalize_model(
+    mlp_model,
+    mlp_best
+  )
+
+mlp_final_model
+
+final_mlp_workflow <- 
+  workflow() %>%
+  add_recipe(Card_Penta1_recipe) %>%
+  add_model(mlp_final_model)
+
+final_mlp_results <- 
+  last_fit(final_mlp_workflow, cv_split)
+
+mlp_results <- 
+  collect_metrics(final_mlp_results)
+
+mlp_results
+```
+
+### Confusion matrix for the final model
+
+```{r}
+# Confusion matrix for the final logistic regression model
+
+collect_predictions(final_logistic_results) %>%
+  conf_mat(truth = Card_Penta1, estimate = .pred_class)
+
+```
+
+```{r}
+# Confusion matrix for the final random forest model
+collect_predictions(final_rf_results) %>%
+  conf_mat(truth = Card_Penta1, estimate = .pred_class)
+```
+
+```{r}
+# Confusion matrix for the final ANN model
+collect_predictions(final_mlp_results) %>%
+  conf_mat(truth = Card_Penta1, estimate = .pred_class)
+```
+
+Confusion matrix for the final models indicate that logistic regression model predicts 864 and 26 observations correctly for the two categories respectively. While logistic regression model predicts 748 and 45 observations correctly and the ANN model predicts 829 and 32 observations correctly. 
+
+
+### Final Results
+
+```{r}
+### Logistic Regression
+kable(lr_results, digits = 2)
+
+### Random Forest
+kable(rf_results, digits = 2)
+
+### ANN
+kable(mlp_results, digits = 2)
+```
+
+Given the data imbalance, roc_auc is used as a preferred metric to compare the performance of the three models. Based on the results, the Random forest model achieved the highest AUC (0.91), followed by Logistic Regression (AUC = 0.82) and ANN  model (AUC = 0.81).
+
+```{r}
+#bar plot for the AUC of the three models
+auc_values <- data.frame(
+  Model = c("Logistic Regression"),
+  AUC = c(lr_results$roc_auc, rf_results$roc_auc, mlp_results$roc_auc)
+)
+```
+
+
+```{r}
+# ROC curve for the final logistic regression model
+
+roc_curve <- final_logistic_results %>%
+  collect_predictions() %>%
+  roc_curve(truth = Card_Penta1, .pred_0) %>%
+  autoplot()
+roc_curve
+
+```
+
+```{r}
+# ROC curve for the final random forest model
+roc_curve_rf <- final_rf_results %>%
+  collect_predictions() %>%
+  roc_curve(truth = Card_Penta1, .pred_0) %>%
+  autoplot()
+roc_curve_rf
+```
+
+
+```{r}
+# ROC curve for the final ANN model
+roc_curve_mlp <- final_mlp_results %>%
+  collect_predictions() %>%
+  roc_curve(truth = Card_Penta1, .pred_0) %>%
+  autoplot()
+roc_curve_mlp
+```
+
+The above ROC curves indicate that the Random Forest model has the best performance in distinguishing between zero dose and non-zero dose children confirming that the Random Forest model is the best performing model among the three.
+
+### Variable Importance
+
+Based on the best performing model (Random Forest).
+
+```{r}
+prep <- prep(Card_Penta1_recipe)
+
+rf_final_model %>%
+  set_engine("ranger", importance = "permutation") %>%
+  fit(Card_Penta1 ~ .,
+    data = juice(prep)) %>%
+  vip(geom = "point")
+```
+
+
+The feature importance analysis indicates that antenatal care (ANC) attendance is the most influential predictor of Zero dose immunization status. This is followed by other HF visit, which is a visit to health facility for any reason other than immunization. It is usually considered a window of opportunity to get unimmunized children and get them vaccinated. Other important predictors include receiving health education about immunization, number of under five children in the household and number of ANC visits.  
+
+
+## Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
